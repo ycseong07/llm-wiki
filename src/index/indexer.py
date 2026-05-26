@@ -15,6 +15,9 @@ from src.index.qdrant import chunk_id, delete_by_vault_path, ensure_collection, 
 
 
 def _payload(chunk_text: str, chunk_index: int, frontmatter: dict, vault_path: Path) -> dict:
+    tags = frontmatter.get("tags") or []
+    if not isinstance(tags, list):
+        tags = []
     return {
         "vault_path": vault_path.as_posix(),
         "chunk_index": chunk_index,
@@ -24,6 +27,7 @@ def _payload(chunk_text: str, chunk_index: int, frontmatter: dict, vault_path: P
         "category": frontmatter.get("category", ""),
         "title": _extract_title(chunk_text, frontmatter),
         "published": str(frontmatter.get("published", "")),
+        "tags": [str(t) for t in tags],
     }
 
 

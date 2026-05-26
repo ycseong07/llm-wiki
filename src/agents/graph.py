@@ -12,7 +12,9 @@ from langgraph.graph import END, StateGraph
 
 from src.agents.nodes.classifier import classify_entry
 from src.agents.nodes.deduplicator import dedupe_by_url
-from src.agents.nodes.summarizer import summarize_entry
+from src.agents.nodes.fulltext import fetch_fulltext
+from src.agents.nodes.link_expander import expand_links
+from src.agents.nodes.summarizer import unified_summarize
 from src.agents.nodes.vault_writer import target_path, write_entry
 from src.agents.sources.gmail import fetch_recent as fetch_gmail
 from src.agents.sources.rss import Entry, fetch_all as fetch_rss
@@ -49,13 +51,31 @@ def exists_node(state: State) -> dict:
     return {"entries": out}
 
 
-def classify_node(state: State) -> dict:
-    out = [classify_entry(e) for e in state["entries"]]
+def fulltext_node(state: State) -> dict:
+    entries = state["entries"]
+    before_len = sum(len(e.summary) for e in entries)
+    enriched = [fetch_fulltext(e) for e in entries]
+    after_len = sum(len(e.summary) for e in enriched)
+    upgraded = sum(1 for b, a in zip(entries, enriched) if len(a.summary) > len(b.summary))
+    print(f"[fulltext] upgraded={upgraded}/{len(entries)}  body bytes {before_len} -> {after_len}")
+    return {"entries": enriched}
+
+
+def expand_links_node(state: State) -> dict:
+    entries = [expand_links(e) for e in state["entries"]]
+    total_links = sum(len(e.linked_contents) for e in entries)
+    with_links = sum(1 for e in entries if e.linked_contents)
+    print(f"[expand_links] {with_links}/{len(entries)} entries got linked contents, total fetched={total_links}")
+    return {"entries": entries}
+
+
+def unified_summarize_node(state: State) -> dict:
+    out = [unified_summarize(e) for e in state["entries"]]
     return {"entries": out}
 
 
-def summarize_node(state: State) -> dict:
-    out = [summarize_entry(e) for e in state["entries"]]
+def classify_node(state: State) -> dict:
+    out = [classify_entry(e) for e in state["entries"]]
     return {"entries": out}
 
 
@@ -70,14 +90,18 @@ def build_graph():
     g.add_node("fetch", fetch_node)
     g.add_node("dedupe", dedupe_node)
     g.add_node("exists_filter", exists_node)
+    g.add_node("fulltext", fulltext_node)
+    g.add_node("expand_links", expand_links_node)
+    g.add_node("unified_summarize", unified_summarize_node)
     g.add_node("classify", classify_node)
-    g.add_node("summarize", summarize_node)
     g.add_node("write", write_node)
     g.set_entry_point("fetch")
     g.add_edge("fetch", "dedupe")
     g.add_edge("dedupe", "exists_filter")
-    g.add_edge("exists_filter", "classify")
-    g.add_edge("classify", "summarize")
-    g.add_edge("summarize", "write")
+    g.add_edge("exists_filter", "fulltext")
+    g.add_edge("fulltext", "expand_links")
+    g.add_edge("expand_links", "unified_summarize")
+    g.add_edge("unified_summarize", "classify")
+    g.add_edge("classify", "write")
     g.add_edge("write", END)
     return g.compile()

@@ -36,8 +36,6 @@ mcp = FastMCP(
     ),
 )
 
-VALID_CATEGORIES = {"finance", "ai", "newsletter", "community"}
-
 
 @mcp.tool()
 @observe(name="mcp.search_documents")
@@ -105,16 +103,50 @@ def get_daily_digest(date: str | None = None) -> dict:
 
 @mcp.tool()
 @observe(name="mcp.get_by_tag")
-def get_by_tag(tag: str) -> list[dict]:
-    """Return entries matching `tag`.
+def get_by_tag(tag: str, limit: int = 20) -> list[dict]:
+    """Return chunks tagged with `tag` (keyword extracted by the ingest pipeline).
 
-    Phase 4 limitation: vault has no `tags` frontmatter field yet, so tag is
-    aliased to category. Valid tags: finance, ai, newsletter, community.
+    Tags are stored on each chunk's Qdrant payload as a list of strings.
+    Returns unique vault entries (deduped by vault_path), newest first.
     """
-    if tag not in VALID_CATEGORIES:
-        emit("mcp.get_by_tag", tag=tag, error="unknown_tag")
-        return []
-    return list_recent(category=tag, days=30)
+    from qdrant_client.http import models as qm
+
+    from src.index.qdrant import COLLECTION, get_client as _qdrant_client
+
+    with Timer() as t:
+        qfilter = qm.Filter(
+            must=[qm.FieldCondition(key="tags", match=qm.MatchValue(value=tag))]
+        )
+        points, _ = _qdrant_client().scroll(
+            collection_name=COLLECTION,
+            scroll_filter=qfilter,
+            limit=max(limit * 3, 30),
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        seen: set[str] = set()
+        results: list[dict] = []
+        for p in points:
+            payload = p.payload or {}
+            vp = payload.get("vault_path", "")
+            if vp in seen:
+                continue
+            seen.add(vp)
+            results.append({
+                "title": payload.get("title", ""),
+                "source": payload.get("source", ""),
+                "category": payload.get("category", ""),
+                "url": payload.get("url", ""),
+                "published": payload.get("published", ""),
+                "tags": payload.get("tags", []),
+                "vault_path": vp,
+            })
+            if len(results) >= limit:
+                break
+
+    emit("mcp.get_by_tag", tag=tag, count=len(results), ms=t.ms)
+    return results
 
 
 def _read_frontmatter(path: Path) -> dict:

@@ -31,6 +31,14 @@ def target_path(entry: Entry, vault_root: Path) -> Path:
     return vault_root / subdir / fname
 
 
+def _format_tags(tags: list[str]) -> str:
+    if not tags:
+        return "tags: []"
+    # Inline flow-style list; YAML-safe by quoting each tag.
+    quoted = ", ".join(f"\"{t}\"" for t in tags)
+    return f"tags: [{quoted}]"
+
+
 def write_entry(entry: Entry, vault_root: Path) -> Path | None:
     path = target_path(entry, vault_root)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -43,6 +51,7 @@ def write_entry(entry: Entry, vault_root: Path) -> Path | None:
         f"url: {entry.url}\n"
         f"category: {entry.category}\n"
         f"published: {entry.published}\n"
+        f"{_format_tags(entry.tags)}\n"
         f"---\n\n"
         f"# {entry.title}\n\n"
         f"{entry.summary}\n\n"

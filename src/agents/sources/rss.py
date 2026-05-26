@@ -1,5 +1,5 @@
 """RSS fetcher — yields normalized entries from feeds.yaml."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
 
@@ -12,6 +12,12 @@ MAX_PER_FEED = 10
 
 
 @dataclass
+class LinkedContent:
+    url: str
+    text: str  # extracted body, capped
+
+
+@dataclass
 class Entry:
     category: str
     source: str
@@ -19,6 +25,8 @@ class Entry:
     url: str
     published: str
     summary: str
+    tags: list[str] = field(default_factory=list)
+    linked_contents: list[LinkedContent] = field(default_factory=list)
 
 
 def load_feeds(feeds_path: Path) -> dict:
