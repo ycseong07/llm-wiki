@@ -12,6 +12,8 @@ import time
 from google import genai
 
 from src import credentials as c
+from src.eval.tracing import get_client as _lf_client
+from src.eval.tracing import observe
 
 MODEL = "gemini-2.5-flash"
 _MIN_INTERVAL_S = 0.5
@@ -28,6 +30,7 @@ def _get_client() -> genai.Client:
     return _client
 
 
+@observe(as_type="generation", name="gemini")
 def generate(prompt: str) -> str:
     global _last_call
     with _lock:
@@ -36,4 +39,16 @@ def generate(prompt: str) -> str:
             time.sleep(_MIN_INTERVAL_S - elapsed)
         resp = _get_client().models.generate_content(model=MODEL, contents=prompt)
         _last_call = time.monotonic()
-    return (resp.text or "").strip()
+    text = (resp.text or "").strip()
+    try:
+        usage = getattr(resp, "usage_metadata", None)
+        usage_details: dict[str, int] = {}
+        if usage:
+            if getattr(usage, "prompt_token_count", None) is not None:
+                usage_details["input"] = usage.prompt_token_count
+            if getattr(usage, "candidates_token_count", None) is not None:
+                usage_details["output"] = usage.candidates_token_count
+        _lf_client().update_current_observation(model=MODEL, usage_details=usage_details or None)
+    except Exception:
+        pass
+    return text

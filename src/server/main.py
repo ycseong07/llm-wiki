@@ -16,6 +16,8 @@ from slowapi.util import get_remote_address
 from watchdog.observers import Observer
 
 from src.config import VAULT_PATH
+from src.eval.tracing import ENABLED as LANGFUSE_ENABLED
+from src.eval.tracing import flush as flush_traces
 from src.index.embedder import _get_model
 from src.index.qdrant import ensure_collection
 from src.index.watcher import VaultHandler
@@ -28,7 +30,7 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    emit("server.startup", vault_path=str(VAULT_PATH))
+    emit("server.startup", vault_path=str(VAULT_PATH), langfuse=LANGFUSE_ENABLED)
     ensure_collection()
     _get_model()  # preload bge-m3 so first /v1/query is fast
 
@@ -46,6 +48,7 @@ async def lifespan(app: FastAPI):
         finally:
             observer.stop()
             observer.join(timeout=5)
+            flush_traces()
             emit("server.shutdown")
 
 

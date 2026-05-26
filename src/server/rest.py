@@ -6,6 +6,7 @@ from dataclasses import asdict
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from src.eval.tracing import observe
 from src.index.search import search
 from src.server.audit import Timer, emit
 from src.server.mcp_tools import list_recent
@@ -20,6 +21,7 @@ class QueryRequest(BaseModel):
 
 
 @router.post("/query")
+@observe(name="rest.query")
 def query(req: QueryRequest) -> dict:
     with Timer() as t:
         hits = search(req.query, top_n=req.limit, category=req.category)

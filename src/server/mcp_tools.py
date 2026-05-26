@@ -18,6 +18,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.config import VAULT_PATH
+from src.eval.tracing import observe
 from src.index.search import search
 from src.server.audit import Timer, emit
 
@@ -39,6 +40,7 @@ VALID_CATEGORIES = {"finance", "ai", "newsletter", "community"}
 
 
 @mcp.tool()
+@observe(name="mcp.search_documents")
 def search_documents(query: str, category: str | None = None, limit: int = 5) -> list[dict]:
     """Semantic search over the vault. Returns top-N chunks with payload."""
     with Timer() as t:
@@ -48,6 +50,7 @@ def search_documents(query: str, category: str | None = None, limit: int = 5) ->
 
 
 @mcp.tool()
+@observe(name="mcp.list_recent")
 def list_recent(category: str | None = None, days: int = 1) -> list[dict]:
     """List vault entries created within the last `days` days, newest first."""
     with Timer() as t:
@@ -80,6 +83,7 @@ def list_recent(category: str | None = None, days: int = 1) -> list[dict]:
 
 
 @mcp.tool()
+@observe(name="mcp.get_daily_digest")
 def get_daily_digest(date: str | None = None) -> dict:
     """Return the Daily Digest markdown for `date` (YYYY-MM-DD) or today.
 
@@ -100,6 +104,7 @@ def get_daily_digest(date: str | None = None) -> dict:
 
 
 @mcp.tool()
+@observe(name="mcp.get_by_tag")
 def get_by_tag(tag: str) -> list[dict]:
     """Return entries matching `tag`.
 

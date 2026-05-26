@@ -9,6 +9,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from src.eval.behavior import REPEAT_THRESHOLD, record_query
+from src.eval.metrics import retrieval_metrics
+from src.eval.tracing import get_client as _lf_client
+from src.eval.tracing import observe
 from src.index.embedder import embed
 from src.index.qdrant import COLLECTION, get_client
 
@@ -53,6 +57,7 @@ def _mmr(
     return selected
 
 
+@observe(name="search")
 def search(
     query: str,
     top_n: int = 5,
@@ -83,6 +88,19 @@ def search(
         return []
 
     cand_vecs = np.array([h.vector for h in hits], dtype=np.float32)
+
+    # PROJECT_PLAN §8.2 Layer A + B — best-effort, never raise.
+    try:
+        lf = _lf_client()
+        for name, value in retrieval_metrics(cand_vecs, [h.score for h in hits]).items():
+            lf.score_current_span(name=name, value=value)
+        repeat_sim = record_query(qv)
+        lf.score_current_span(name="repeat_similarity", value=repeat_sim)
+        if repeat_sim >= REPEAT_THRESHOLD:
+            lf.update_current_trace(tags=["repeat_query"])
+    except Exception:
+        pass
+
     order = _mmr(qv, cand_vecs, lambda_=mmr_lambda, top_n=top_n)
     return [
         Hit(

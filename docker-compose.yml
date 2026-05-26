@@ -92,6 +92,20 @@ services:
       timeout: 3s
       retries: 10
 
+  # One-shot init: create the `langfuse` bucket the server/worker upload OTel traces into.
+  # Without this the very first boot fails with "specified bucket does not exist".
+  langfuse-minio-init:
+    image: minio/mc:latest
+    depends_on:
+      langfuse-minio:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mc alias set local http://langfuse-minio:9000 minio miniosecret &&
+        mc mb --ignore-existing local/langfuse
+
   langfuse-worker:
     image: langfuse/langfuse-worker:3
     restart: unless-stopped
@@ -104,6 +118,8 @@ services:
         condition: service_healthy
       langfuse-minio:
         condition: service_healthy
+      langfuse-minio-init:
+        condition: service_completed_successfully
     environment:
       <<: *langfuse-base-env
 
@@ -119,6 +135,8 @@ services:
         condition: service_healthy
       langfuse-minio:
         condition: service_healthy
+      langfuse-minio-init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:3000:3000"
     environment:

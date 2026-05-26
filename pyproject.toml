@@ -21,6 +21,7 @@ dependencies = [
     "watchdog>=5.0",
     "mcp>=1.2",
     "slowapi>=0.1.9",
+    "langfuse>=2.50",
 ]
 
 [tool.pytest.ini_options]
