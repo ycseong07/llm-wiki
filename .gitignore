@@ -1,0 +1,50 @@
+# --- Secrets (PROJECT_PLAN.md §4 — never commit) ---
+.env
+.env.*
+!.env.example
+credentials.json
+token.json
+*.pem
+*.key
+*_secret*
+*_token*
+gcp_credentials/
+
+# --- Python / uv ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Project artifacts (not source of truth) ---
+logs/
+*.log
+data/
+vault/
+models/
+qdrant_storage/
+langfuse_data/
+.bge-m3-cache/
+
+# --- Claude Code local overrides ---
+.claude/settings.local.json
+.claude/.cache/
+
+
+harness_basic/
+.claude/
+.obsidian/
+CLAUDE.md
+PROJECT_PLAN.md

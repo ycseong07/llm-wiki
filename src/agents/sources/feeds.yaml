@@ -1,0 +1,17 @@
+# RSS sources for offline-capable ingest.
+# Per PROJECT_PLAN.md §7.1: URLs may change — verify on first run.
+finance:
+  - name: 한국경제
+    url: https://rss.hankyung.com/feed/economy.xml
+  - name: 이데일리
+    url: https://www.edaily.co.kr/rss/edaily_news.xml
+
+ai:
+  - name: HuggingFace
+    url: https://huggingface.co/blog/feed.xml
+  - name: Anthropic
+    url: https://www.anthropic.com/news/rss.xml
+
+community:
+  - name: hada.io
+    url: https://news.hada.io/rss/news
