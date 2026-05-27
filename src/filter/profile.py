@@ -1,0 +1,72 @@
+"""Load the user's intent profile from the Obsidian vault.
+
+Signals used by the scorer to decide whether a candidate is worth recommending:
+- entity + concept page names (what the user actively maintains pages about)
+- wiki/index.md text (the curated catalog with one-line descriptions)
+- 나의 핵심 맥락.md (the user's self-interview: roles, values, vision)
+- graphify-out/GRAPH_REPORT.md (god nodes / communities, already digested)
+
+Caching is process-level: each `discover_*` run loads once.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from functools import lru_cache
+
+from src.config import graphify_out_dir, obsidian_vault_path, user_context_path, wiki_dir
+
+
+def _read(path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
+
+
+@dataclass
+class Profile:
+    page_names: set[str] = field(default_factory=set)
+    wiki_index_text: str = ""
+    user_context: str = ""
+    graph_report_text: str = ""
+
+    def as_prompt_block(self) -> str:
+        """Single text block injected into the scorer prompt."""
+        parts: list[str] = []
+        if self.user_context:
+            parts.append("## 사용자 핵심 맥락\n" + self.user_context.strip())
+        if self.wiki_index_text:
+            parts.append("## 위키 인덱스 (관심 토픽 카탈로그)\n" + self.wiki_index_text.strip())
+        if self.graph_report_text:
+            parts.append(
+                "## 지식 그래프 요약 (god nodes / communities)\n"
+                + self.graph_report_text.strip()
+            )
+        if self.page_names:
+            parts.append(
+                "## 보유 위키 페이지명 (entity + concept)\n"
+                + ", ".join(sorted(self.page_names))
+            )
+        return "\n\n".join(parts)
+
+
+def _collect_page_names() -> set[str]:
+    names: set[str] = set()
+    for sub in ("entities", "concepts"):
+        d = wiki_dir() / sub
+        if not d.is_dir():
+            continue
+        for p in d.glob("*.md"):
+            names.add(p.stem)
+    return names
+
+
+@lru_cache(maxsize=1)
+def load_profile() -> Profile:
+    obsidian_vault_path()  # validates env
+    return Profile(
+        page_names=_collect_page_names(),
+        wiki_index_text=_read(wiki_dir() / "index.md"),
+        user_context=_read(user_context_path()),
+        graph_report_text=_read(graphify_out_dir() / "GRAPH_REPORT.md"),
+    )
