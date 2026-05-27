@@ -1,28 +1,16 @@
 [project]
 name = "llm-wiki"
-version = "0.1.0"
-description = "Personal RAG Knowledge System — Windows-side ingest + indexing, Mac-side MCP retrieval."
+version = "0.2.0"
+description = "Candidate-discovery helper for the Obsidian-based personal wiki. Filters external sources against the user's vault profile and drops survivors into raw/articles/ for manual ingest."
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
     "python-dotenv>=1.0",
     "keyring>=25",
     "pyyaml>=6.0",
     "feedparser>=6.0",
-    "google-auth>=2.30",
-    "google-auth-oauthlib>=1.2",
-    "google-api-python-client>=2.140",
-    "google-genai>=0.8",
-    "langgraph>=0.2",
-    "qdrant-client>=1.12",
-    "sentence-transformers>=3.0",
-    "langchain-text-splitters>=0.3",
-    "watchdog>=5.0",
-    "mcp>=1.2",
-    "slowapi>=0.1.9",
-    "langfuse>=2.50",
     "trafilatura>=2.0",
+    "google-genai>=0.8",
+    "requests>=2.32",
 ]
 
 [tool.pytest.ini_options]

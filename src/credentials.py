@@ -11,24 +11,9 @@ import keyring
 
 SERVICE = "llm_wiki"
 
-# Known secret keys. Add here when a new secret is needed.
 GEMINI_API_KEY = "gemini_api_key"
-ANTHROPIC_API_KEY = "anthropic_api_key"
-JWT_SECRET = "jwt_secret"
-QDRANT_API_KEY = "qdrant_api_key"
-LANGFUSE_PUBLIC_KEY = "langfuse_public_key"
-LANGFUSE_SECRET_KEY = "langfuse_secret_key"
-GMAIL_REFRESH_TOKEN = "gmail_refresh_token"
 
-KNOWN_KEYS = (
-    GEMINI_API_KEY,
-    ANTHROPIC_API_KEY,
-    JWT_SECRET,
-    QDRANT_API_KEY,
-    LANGFUSE_PUBLIC_KEY,
-    LANGFUSE_SECRET_KEY,
-    GMAIL_REFRESH_TOKEN,
-)
+KNOWN_KEYS = (GEMINI_API_KEY,)
 
 
 def get_secret(key: str) -> str | None:

@@ -17,12 +17,7 @@ from src import credentials as c  # noqa: E402
 
 
 PROMPTS = [
-    (c.GEMINI_API_KEY, "Gemini API key (required for ingest)", True),
-    (c.ANTHROPIC_API_KEY, "Anthropic API key (optional; Claude Pro on Mac side usually covers this)", False),
-    (c.JWT_SECRET, "JWT secret (only if you enable Layer 2 JWT auth)", False),
-    (c.QDRANT_API_KEY, "Qdrant API key (skip for local Docker; only set if Qdrant is remote)", False),
-    (c.LANGFUSE_PUBLIC_KEY, "Langfuse public key (created in Langfuse UI after Phase 6)", False),
-    (c.LANGFUSE_SECRET_KEY, "Langfuse secret key (created in Langfuse UI after Phase 6)", False),
+    (c.GEMINI_API_KEY, "Gemini API key (required for filter scoring)", True),
 ]
 
 
