@@ -162,14 +162,24 @@ $ uv run python scripts/discover_geeknews.py
 - **자동 ingest 절대 금지** — raw에만 쌓이고 사용자가 옵시디언에서 결정.
 - 진입 조건: Phase 3 끝나고 "쓰레기통 안 됨" 재점검.
 
+### Phase 5 (먼 미래) — Mac MCP read-only 서버
+- **목적**: Mac에서 Claude Code로 Windows의 옵시디언 볼트(2nd brain)를 query.
+- **노출 도구 (read-only만)**: `read_wiki_page(name)`, `list_wiki_index()`, `list_recent_log(n)`, `search_wiki_grep(pattern, glob)`, `read_graphify(format)`, `list_raw_unprocessed()` 정도.
+- **임베딩 RAG 없음**: 옵시디언 안 `/query` 스킬과 graphify가 의미 검색을 이미 담당. Mac MCP는 단순 파일 접근 + grep 만.
+- **인프라**: FastAPI(127.0.0.1) + Tailscale serve로 tailnet HTTPS 노출. 메모리 [[network-tailscale]], [[mcp-scope]] 참조.
+- **인증**: 기본 Tailscale 단말 인증만. JWT(선택)는 친구를 tailnet에 들이거나 Tailscale 계정 침해 대비 시 활성.
+- **쓰기 금지**: read-only. `discover_*` 트리거나 wiki 편집 도구는 노출하지 않음 (필요해지면 별도 결정).
+- **진입 조건**: Phase 3까지 안정화 + Mac에서 옵시디언 볼트 접근 필요성이 실제로 누적될 때. 그 전까지는 Mac에서 옵시디언 앱으로 직접 보는 것으로 대응.
+
 ---
 
 ## 7. 보안 / 데이터 가드
 
-- Tailscale/JWT/FastAPI 없음. 외부 노출 0.
+- Phase 1~4 동안 외부 노출 0 (FastAPI/MCP/Tailscale 코드 없음).
+- Phase 5 도입 시 외부 노출 = Tailscale tailnet HTTPS 한정 (`tailscale serve --bg --https=443 http://127.0.0.1:<port>`). 공개 인터넷 직접 바인딩 금지.
 - Gemini API 키는 `keyring`(Windows Credential Manager). `src/credentials.py` 단일 경로로만.
 - 옵시디언 볼트 경로는 `.env` 의 `OBSIDIAN_VAULT_PATH`. 코드 하드코딩 금지.
-- `raw/articles/` 외의 옵시디언 볼트 경로에 쓰기 금지(코드 레벨 가드 권장).
+- `raw/articles/` 외의 옵시디언 볼트 경로에 쓰기 금지(코드 레벨 가드 권장). Phase 5의 MCP도 read-only.
 
 ---
 

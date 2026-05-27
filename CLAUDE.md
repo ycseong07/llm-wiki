@@ -113,7 +113,7 @@
 ### 2.4 보안 — 절대 금지 (Must Never)
 - `.env`, API 키 등을 **코드/주석/로그/커밋**에 평문 노출하지 않는다.
 - 비밀은 **`keyring` 라이브러리 + Windows Credential Manager**로 조회 (`src/credentials.py` 단일 경로).
-- 외부 노출하지 않는다 (이 프로젝트는 서버를 띄우지 않음). 추후 FastAPI/MCP/HTTP listener 도입 제안은 PROJECT_PLAN.md 부록 A 의사결정 로그 갱신 + 사용자 명시 승인 필요.
+- Phase 1~4 동안 외부 노출 없음 (FastAPI/MCP 코드 없음). Phase 5(먼 미래 — Mac에서 옵시디언 볼트 read-only query)에서만 Tailscale tailnet HTTPS 경유로 노출. 공개 인터넷 직접 바인딩 영구 금지.
 - 위험 git 명령(`push --force`, `reset --hard`, `clean -f`, `branch -D`, `--no-verify`)은 사용자가 **명시 요청**할 때만.
 
 ### 2.5 옵시디언 볼트 가드 (가장 중요)
@@ -189,7 +189,7 @@ Karpathy 정신: **필요할 때 더한다**. 강제 커버리지 목표 없음.
 - `.env` / API 키를 코드/로그/커밋에 노출.
 - 옵시디언 볼트의 `raw/articles/` 외 경로에 쓰기 (특히 `wiki/`, `Output/`, `graphify-out/`).
 - 사용자 클리핑 본문 수정. `ingested` 외 frontmatter 임의 변경.
-- 외부 노출용 서버(FastAPI, MCP, HTTP listener) 추가 — 별도 의사결정 필요.
+- Phase 5 외 외부 노출용 서버(FastAPI, MCP, HTTP listener) 추가, 또는 Phase 5 MCP에 쓰기 도구 노출 — 별도 의사결정 필요.
 - 사용자 명시 없이 위험 git 명령 실행 (`--force`, `--hard`, `--no-verify`, `-D` 등).
 
 ---
