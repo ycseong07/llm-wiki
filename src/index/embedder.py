@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Sequence
 
 import numpy as np
+import torch
 from sentence_transformers import SentenceTransformer
 
 MODEL_NAME = "BAAI/bge-m3"
@@ -18,6 +19,9 @@ _model: SentenceTransformer | None = None
 def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
+        # CPU-only torch on a 4P/8T laptop: cap to physical cores so encoding
+        # doesn't peg the whole system. Must be set before the model loads.
+        torch.set_num_threads(4)
         # device=None lets sentence-transformers auto-detect (cuda > mps > cpu).
         _model = SentenceTransformer(MODEL_NAME, device=None)
     return _model

@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import yaml  # noqa: E402
 
 from src.agents.nodes._gemini import generate  # noqa: E402
+from src.agents.nodes.vault_writer import sanitize_tag  # noqa: E402
 from src.config import VAULT_PATH  # noqa: E402
 from src.index.indexer import index_file  # noqa: E402
 
@@ -61,8 +62,12 @@ def _format_frontmatter(meta: dict) -> str:
         lines.append(f"{k}: {v}")
     tags = meta.get("tags") or []
     if isinstance(tags, list) and tags:
-        quoted = ", ".join(f"\"{t}\"" for t in tags)
-        lines.append(f"tags: [{quoted}]")
+        cleaned = [s for s in (sanitize_tag(str(t)) for t in tags) if s]
+        if cleaned:
+            quoted = ", ".join(f"\"{t}\"" for t in cleaned)
+            lines.append(f"tags: [{quoted}]")
+        else:
+            lines.append("tags: []")
     else:
         lines.append("tags: []")
     return "---\n" + "\n".join(lines) + "\n---\n"

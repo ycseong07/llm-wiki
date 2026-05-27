@@ -1,9 +1,9 @@
 """Daily digest builder — runs once per day at 07:00 via Task Scheduler.
 
 Scans vault for files written in the previous 24h window (mtime-based),
-groups by category, calls Gemini ONCE per category for a category-level summary
-plus per-entry importance score (1-5), checks continuity vs yesterday's digest
-via embedding similarity, and renders `vault/00_Daily/daily.md`.
+groups them into 3 buckets (AI/AX, 경제/주식, 기타), then asks Gemini to
+**pick the top 3 per bucket with a one-line reason for each**. Renders
+`vault/00_Daily/daily.md` as a 9-item digest readable in ~10 minutes.
 """
 from __future__ import annotations
 
@@ -12,29 +12,28 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
-import numpy as np
 import yaml
 
 from src.agents.nodes._gemini import generate
 from src.config import VAULT_PATH
 
-CATEGORIES_ORDER = ["finance", "ai", "newsletter", "community"]
-CATEGORY_DIRS = {
-    "finance": "10_Finance",
-    "ai": "20_AI",
-    "newsletter": "30_Newsletters",
-    "community": "40_HadaIO",
-}
+CATEGORIES_ORDER = ["ai", "finance", "etc"]
 CATEGORY_LABELS = {
-    "finance": "증권/금융/경제",
-    "ai": "AI/기술",
-    "newsletter": "뉴스레터",
-    "community": "news.hada.io",
+    "ai": "AI/AX",
+    "finance": "경제/주식",
+    "etc": "기타",
+}
+# Each digest bucket pulls from one or more vault subfolders. "etc" merges
+# the newsletter + community folders into a single "everything else" pool.
+CATEGORY_SOURCES = {
+    "ai": ["20_AI"],
+    "finance": ["10_Finance"],
+    "etc": ["30_Newsletters", "40_HadaIO"],
 }
 DIGEST_DIR = VAULT_PATH / "00_Daily"
 DIGEST_PATH = DIGEST_DIR / "daily.md"
 
-CONTINUITY_THRESHOLD = 0.7  # cosine sim above this -> "지속 추적" flag
+PICKS_PER_CATEGORY = 3
 
 
 @dataclass
@@ -45,8 +44,8 @@ class Entry:
     summary: str
     category: str
     vault_path: Path
-    importance: int = 3
-    continuity: bool = False
+    picked: bool = False
+    reason: str = ""
 
 
 def _read_frontmatter(path: Path) -> tuple[dict, str]:
@@ -70,16 +69,23 @@ def _title_from_body(body: str, fallback: str) -> str:
 
 
 def _summary_from_body(body: str) -> str:
-    # Body starts with `# Title`, then blank, then summary paragraph(s), then `[원문](...)`.
-    paragraphs: list[str] = []
+    """Full body of the article note (minus title/source link) so the LLM has
+    enough context to judge importance and the renderer can extract a lead."""
+    lines: list[str] = []
     for line in body.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or line.startswith("[원문]"):
+        if line.startswith("# ") or line.startswith("[원문]"):
             continue
-        paragraphs.append(line)
-        if len("\n".join(paragraphs)) > 800:
-            break
-    return "\n".join(paragraphs)
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def _lead_paragraph(summary: str, max_chars: int = 280) -> str:
+    for line in summary.splitlines():
+        s = line.strip()
+        if not s or s.startswith(("-", "*", "#", ">")):
+            continue
+        return s[:max_chars] + ("..." if len(s) > max_chars else "")
+    return ""
 
 
 def _window() -> tuple[datetime, datetime]:
@@ -93,64 +99,87 @@ def _window() -> tuple[datetime, datetime]:
 
 def collect_entries(start: datetime, end: datetime) -> list[Entry]:
     entries: list[Entry] = []
-    for cat, subdir in CATEGORY_DIRS.items():
-        folder = VAULT_PATH / subdir
-        if not folder.exists():
-            continue
-        for path in folder.glob("*.md"):
-            if path.name.startswith("."):
+    for cat, subdirs in CATEGORY_SOURCES.items():
+        for subdir in subdirs:
+            folder = VAULT_PATH / subdir
+            if not folder.exists():
                 continue
-            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).astimezone()
-            if not (start <= mtime < end):
-                continue
-            meta, body = _read_frontmatter(path)
-            entries.append(
-                Entry(
-                    title=_title_from_body(body, path.stem),
-                    source=meta.get("source", ""),
-                    url=meta.get("url", ""),
-                    summary=_summary_from_body(body),
-                    category=cat,
-                    vault_path=path,
+            for path in folder.glob("*.md"):
+                if path.name.startswith("."):
+                    continue
+                mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).astimezone()
+                if not (start <= mtime < end):
+                    continue
+                meta, body = _read_frontmatter(path)
+                entries.append(
+                    Entry(
+                        title=_title_from_body(body, path.stem),
+                        source=meta.get("source", ""),
+                        url=meta.get("url", ""),
+                        summary=_summary_from_body(body),
+                        category=cat,
+                        vault_path=path,
+                    )
                 )
-            )
     return entries
 
 
 _CAT_PROMPT = """다음은 오늘 수집된 '{category_label}' 카테고리 콘텐츠 목록이다.
-1) 카테고리 전체에서 가장 중요한 흐름 2~3문장 한국어 요약
-2) 각 엔트리에 1~5 중요도 점수 (5=매일 봐야 함, 1=배경 정보)
+사용자는 매일 아침 약 10분 안에 이 카테고리를 훑고 싶다. 가장 중요한 {picks}개만 골라라.
 
-JSON으로만 응답. 다른 텍스트 금지:
-{{
-  "category_summary": "...",
-  "scores": [{{"i": 0, "score": 5}}, {{"i": 1, "score": 3}}, ...]
-}}
+선정 기준 (위쪽 가중치 높음):
+1) 시장/판단/실무에 즉시 영향을 줄 만한가
+2) 새로운 사실/발표/숫자 (회고·해설·재게시는 후순위)
+3) 영향 범위 (해당 분야에서 많은 사람·기업에 적용되는가)
+4) 같은 사건의 여러 보도 중 가장 1차에 가까운 자료
+
+각 선정 항목에 대해 **왜 골랐는지를 한 문장 한국어**로 적어라.
+이유는 "중요하다" 같은 동어반복이 아니라, 구체적 사실/숫자/맥락을 짧게 짚어야 한다.
+
+JSON으로만 응답 (다른 텍스트 금지):
+{{"picks": [{{"i": 0, "reason": "..."}}, {{"i": 3, "reason": "..."}}, {{"i": 7, "reason": "..."}}]}}
 
 콘텐츠:
 {items}
 """
 
 
-def enrich_with_llm(entries_by_cat: dict[str, list[Entry]]) -> dict[str, str]:
-    """One Gemini call per category. Mutates Entry.importance in-place."""
-    category_summaries: dict[str, str] = {}
+def _format_items(entries: list[Entry]) -> str:
+    return "\n\n".join(
+        f"[{i}] 제목: {e.title}\n출처: {e.source}\n요약: {e.summary[:600]}"
+        for i, e in enumerate(entries)
+    )
+
+
+def enrich_with_llm(entries_by_cat: dict[str, list[Entry]]) -> None:
+    """One Gemini call per non-empty category. Marks `picked=True` and sets
+    `reason` on up to PICKS_PER_CATEGORY entries in each group."""
     for cat, group in entries_by_cat.items():
         if not group:
             continue
-        items_text = "\n\n".join(
-            f"[{i}] 제목: {e.title}\n출처: {e.source}\n요약: {e.summary[:400]}"
-            for i, e in enumerate(group)
+        target = min(PICKS_PER_CATEGORY, len(group))
+        prompt = _CAT_PROMPT.format(
+            category_label=CATEGORY_LABELS[cat],
+            picks=target,
+            items=_format_items(group),
         )
-        prompt = _CAT_PROMPT.format(category_label=CATEGORY_LABELS[cat], items=items_text)
-        raw = generate(prompt)
-        parsed = _safe_json(raw)
-        category_summaries[cat] = parsed.get("category_summary", "")
-        for score_entry in parsed.get("scores", []) or []:
-            i, score = score_entry.get("i"), score_entry.get("score")
-            if isinstance(i, int) and isinstance(score, int) and 0 <= i < len(group):
-                group[i].importance = max(1, min(5, score))
-    return category_summaries
+        parsed = _safe_json(generate(prompt))
+        picks = parsed.get("picks") or []
+        marked = 0
+        for p in picks:
+            if marked >= PICKS_PER_CATEGORY:
+                break
+            i = p.get("i")
+            reason = (p.get("reason") or "").strip()
+            if isinstance(i, int) and 0 <= i < len(group) and not group[i].picked:
+                group[i].picked = True
+                group[i].reason = reason
+                marked += 1
+        # Fallback: LLM returned nothing usable -> just take first N so the
+        # digest is never empty.
+        if marked == 0:
+            for e in group[:target]:
+                e.picked = True
 
 
 def _safe_json(text: str) -> dict:
@@ -166,30 +195,15 @@ def _safe_json(text: str) -> dict:
         return {}
 
 
-def mark_continuity(entries: list[Entry]) -> None:
-    """Set entry.continuity=True if topic overlaps yesterday's digest (cosine >= threshold)."""
-    if not entries or not DIGEST_PATH.exists():
-        return
-    yesterday = DIGEST_PATH.read_text(encoding="utf-8")
-    if not yesterday.strip():
-        return
-    from src.index.embedder import embed  # local import: bge-m3 takes ~10s to load
-
-    y_vec = embed([yesterday])[0]
-    e_vecs = embed([f"{e.title}\n{e.summary[:300]}" for e in entries])
-    sims = e_vecs @ y_vec  # vectors are L2-normalized
-    for e, s in zip(entries, sims):
-        if float(s) >= CONTINUITY_THRESHOLD:
-            e.continuity = True
-
-
-def render(category_summaries: dict[str, str], entries_by_cat: dict[str, list[Entry]]) -> str:
+def render(entries_by_cat: dict[str, list[Entry]]) -> str:
     now = datetime.now().astimezone()
     total = sum(len(g) for g in entries_by_cat.values())
+    picked_total = sum(sum(1 for e in g if e.picked) for g in entries_by_cat.values())
+
     lines: list[str] = []
     lines.append(f"# {now.date().isoformat()} Daily Digest")
     lines.append("")
-    lines.append(f"> 신규 {total}건 · 생성 {now.strftime('%H:%M')}")
+    lines.append(f"> 신규 {total}건 중 {picked_total}건 선별 · 생성 {now.strftime('%H:%M')}")
     lines.append("")
 
     if total == 0:
@@ -199,33 +213,38 @@ def render(category_summaries: dict[str, str], entries_by_cat: dict[str, list[En
 
     for cat in CATEGORIES_ORDER:
         group = entries_by_cat.get(cat) or []
-        if not group:
+        picked = [e for e in group if e.picked]
+        if not picked:
             continue
-        lines.append(f"## {CATEGORY_LABELS[cat]} ({len(group)}건)")
+        lines.append(f"## {CATEGORY_LABELS[cat]}  *(총 {len(group)}건 중 {len(picked)}건)*")
         lines.append("")
-        cat_sum = category_summaries.get(cat, "").strip()
-        if cat_sum:
-            lines.append(f"> {cat_sum}")
+        for idx, e in enumerate(picked, 1):
+            lines.append(f"### {idx}. {e.title}")
+            if e.reason:
+                lines.append(f"**왜 중요**: {e.reason}")
+                lines.append("")
+            lead = _lead_paragraph(e.summary)
+            if lead:
+                lines.append(lead)
+                lines.append("")
+            link_bits: list[str] = []
+            if e.url:
+                link_bits.append(f"[원문]({e.url})")
+            link_bits.append(f"[[{e.vault_path.stem}|정리본]]")
+            if e.source:
+                link_bits.append(f"`{e.source}`")
+            lines.append(" · ".join(link_bits))
             lines.append("")
-        group_sorted = sorted(group, key=lambda e: e.importance, reverse=True)
-        for e in group_sorted:
-            stars = "⭐" * e.importance
-            cont = " 🔁" if e.continuity else ""
-            link = f"[원문]({e.url})" if e.url else ""
-            src = f"`{e.source}`" if e.source else ""
-            lines.append(f"- **{e.title}** {stars}{cont} — {e.summary.splitlines()[0] if e.summary else ''} {link} {src}".rstrip())
-        lines.append("")
 
-    lines.append("---")
-    lines.append("")
-    lines.append("## 🔗 빠른 검색")
-    lines.append("- Mac Claude Code: `obsidian-rag MCP로 ... 찾아줘`")
-    lines.append("")
     return "\n".join(lines)
 
 
-def build_digest() -> dict:
-    start, end = _window()
+def build_digest(window_days: int | None = None) -> dict:
+    if window_days is None:
+        start, end = _window()
+    else:
+        end = datetime.now().astimezone() + timedelta(hours=1)
+        start = end - timedelta(days=window_days)
     entries = collect_entries(start, end)
 
     entries_by_cat: dict[str, list[Entry]] = {cat: [] for cat in CATEGORIES_ORDER}
@@ -233,12 +252,9 @@ def build_digest() -> dict:
         entries_by_cat.setdefault(e.category, []).append(e)
 
     if entries:
-        category_summaries = enrich_with_llm(entries_by_cat)
-        mark_continuity(entries)
-    else:
-        category_summaries = {}
+        enrich_with_llm(entries_by_cat)
 
-    content = render(category_summaries, entries_by_cat)
+    content = render(entries_by_cat)
     DIGEST_DIR.mkdir(parents=True, exist_ok=True)
     DIGEST_PATH.write_text(content, encoding="utf-8")
 
@@ -247,5 +263,6 @@ def build_digest() -> dict:
         "window_start": start.isoformat(),
         "window_end": end.isoformat(),
         "total": len(entries),
+        "picked": sum(sum(1 for e in g if e.picked) for g in entries_by_cat.values()),
         "per_category": {cat: len(g) for cat, g in entries_by_cat.items() if g},
     }

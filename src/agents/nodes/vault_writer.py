@@ -18,10 +18,20 @@ CATEGORY_DIRS = {
 
 _UNSAFE = re.compile(r"[^\w가-힣\- ]+")
 
+# Obsidian tags allow letters/digits/Korean/_/-//  — everything else
+# (spaces, parentheses, &, etc.) makes the tag show as "유효하지 않은 태그".
+_TAG_INVALID = re.compile(r"[^\w가-힣\-/]+")
+
 
 def _slug(title: str, max_len: int = 60) -> str:
     s = _UNSAFE.sub("", title).strip().replace(" ", "_")
     return s[:max_len] or "untitled"
+
+
+def sanitize_tag(raw: str) -> str:
+    s = _TAG_INVALID.sub("-", raw.strip())
+    s = re.sub(r"-{2,}", "-", s).strip("-")
+    return s
 
 
 def target_path(entry: Entry, vault_root: Path) -> Path:
@@ -34,12 +44,16 @@ def target_path(entry: Entry, vault_root: Path) -> Path:
 def _format_tags(tags: list[str]) -> str:
     if not tags:
         return "tags: []"
-    # Inline flow-style list; YAML-safe by quoting each tag.
-    quoted = ", ".join(f"\"{t}\"" for t in tags)
+    cleaned = [s for s in (sanitize_tag(t) for t in tags) if s]
+    if not cleaned:
+        return "tags: []"
+    quoted = ", ".join(f"\"{t}\"" for t in cleaned)
     return f"tags: [{quoted}]"
 
 
 def write_entry(entry: Entry, vault_root: Path) -> Path | None:
+    if not entry.summary.strip():
+        return None
     path = target_path(entry, vault_root)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():

@@ -16,8 +16,8 @@ import trafilatura
 
 from src.agents.sources.rss import Entry
 
-TIMEOUT_S = 5
-MAX_CHARS = 8000
+TIMEOUT_S = 10
+MAX_CHARS = 16000
 MIN_CHARS = 200  # extracted body shorter than this -> treat as failure
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
