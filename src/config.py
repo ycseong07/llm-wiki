@@ -25,10 +25,6 @@ def obsidian_vault_path() -> Path:
     return p
 
 
-def raw_articles_dir() -> Path:
-    return obsidian_vault_path() / "raw" / "articles"
-
-
 def wiki_dir() -> Path:
     return obsidian_vault_path() / "wiki"
 

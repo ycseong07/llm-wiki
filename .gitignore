@@ -36,6 +36,14 @@ logs/
 harness_basic/
 
 # --- Claude Code local overrides ---
+.claude/
 .claude/settings.local.json
 .claude/.cache/
 .obsidian/
+CLAUDE.md
+
+.agents/
+AGENTS.md
+
+PROJECT_PLAN.md
+new_plan.md
